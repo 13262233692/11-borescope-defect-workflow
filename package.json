@@ -1,0 +1,22 @@
+{
+  "name": "borescope-defect-workflow",
+  "version": "1.0.0",
+  "description": "航空发动机孔探缺陷工单流转系统",
+  "scripts": {
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "build:server": "cd server && npm run build",
+    "build:client": "cd client && npm run build",
+    "build": "npm run build:server && npm run build:client",
+    "test": "cd server && npm test",
+    "start:server": "cd server && npm start",
+    "db:init": "node server/scripts/init-db.js"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "keywords": ["borescope", "aviation", "workflow", "defect"],
+  "author": "",
+  "license": "MIT"
+}

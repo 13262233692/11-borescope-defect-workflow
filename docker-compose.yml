@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: borescope_db
+      POSTGRES_USER: borescope_admin
+      POSTGRES_PASSWORD: Borescope@2026
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U borescope_admin -d borescope_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build: ./server
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgresql://borescope_admin:Borescope@2026@postgres:5432/borescope_db
+      JWT_SECRET: aviation-workflow-secret-key-2026
+      PORT: 3000
+      WS_PORT: 3001
+      UPLOAD_DIR: /app/uploads
+      TILE_DIR: /app/tiles
+    volumes:
+      - ./server/uploads:/app/uploads
+      - ./server/tiles:/app/tiles
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  client:
+    build: ./client
+    ports:
+      - "5173:5173"
+    depends_on:
+      - server
+
+volumes:
+  postgres_data:
