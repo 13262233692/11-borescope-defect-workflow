@@ -274,6 +274,14 @@ async function addComment(caseId, user, comment) {
 
 async function performTransition(caseId, user, opts) {
   return transaction(async (client) => {
+    const { rows: [archived] } = await client.query(
+      "SELECT COUNT(1) AS c FROM archive_record WHERE case_id = $1 AND status = 'COMPLETED'",
+      [caseId]
+    );
+    if (Number(archived.c) > 0) {
+      throw new ConflictError('工单已完成适航归档，禁止修改工单状态');
+    }
+
     const { rows: [caseRow] } = await client.query(
       'SELECT * FROM inspection_case WHERE id = $1 FOR UPDATE',
       [caseId]

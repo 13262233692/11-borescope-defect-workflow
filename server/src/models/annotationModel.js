@@ -3,6 +3,16 @@ const { query, transaction } = require('../db/pool');
 const { NotFoundError, ValidationError, ConflictError, ForbiddenError } = require('../utils/errors');
 const logger = require('../utils/logger');
 
+async function assertCaseNotArchived(caseId) {
+  const { rows } = await query(
+    "SELECT COUNT(1) AS c FROM archive_record WHERE case_id = $1 AND status = 'COMPLETED'",
+    [caseId]
+  );
+  if (Number(rows[0].c) > 0) {
+    throw new ConflictError('工单已完成适航归档，禁止修改标注');
+  }
+}
+
 async function listAnnotations(filters = {}) {
   const conditions = ['a.is_deleted = false'];
   const params = [];
@@ -53,7 +63,8 @@ async function getAnnotation(id) {
   return formatAnnotation(annotation);
 }
 
-async function createAnnotation(data, user) {
+async function createAnnotation(caseId, data, user) {
+  await assertCaseNotArchived(caseId);
   const { x1, y1, x2, y2 } = normalizeBox(data);
 
   const { rows: [image] } = await query(
@@ -115,6 +126,7 @@ async function createAnnotation(data, user) {
 
 async function updateAnnotation(id, data, user, opts = {}) {
   const existing = await getAnnotationRaw(id);
+  await assertCaseNotArchived(existing.case_id);
 
   const providedToken = data.conflictToken ?? opts.conflictToken;
   const providedVersion = data.version ?? opts.expectedVersion;
@@ -220,6 +232,7 @@ async function updateAnnotation(id, data, user, opts = {}) {
 
 async function deleteAnnotation(id, user) {
   const ann = await getAnnotationRaw(id);
+  await assertCaseNotArchived(ann.case_id);
 
   if (!['INSPECTOR', 'ADMIN'].includes(user.role)) {
     throw new ForbiddenError('无权删除标注');
@@ -304,6 +317,14 @@ async function syncAnnotations(caseId, user, payload = {}) {
   const results = [];
 
   return transaction(async (client) => {
+    const { rows: [archiveCheck] } = await client.query(
+      "SELECT COUNT(1) AS c FROM archive_record WHERE case_id = $1 AND status = 'COMPLETED'",
+      [caseId]
+    );
+    if (Number(archiveCheck.c) > 0) {
+      throw new ConflictError('工单已完成适航归档，禁止修改标注');
+    }
+
     for (const op of operations) {
       try {
         if (!op || !op.op) {

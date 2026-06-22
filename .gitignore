@@ -11,7 +11,9 @@ yarn-error.log*
 server/uploads/
 server/tiles/
 server/logs/
+server/archives/
 client/dist/
+scripts/check-frontend-syntax.js
 *.pyc
 __pycache__/
 coverage/

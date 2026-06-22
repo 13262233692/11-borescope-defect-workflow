@@ -21,9 +21,9 @@ export const useUserStore = defineStore('user', {
       if (!role) return false;
       if (role === 'ADMIN') return true;
       const matrix = {
-        INSPECTOR: ['case:create', 'case:submit', 'annotation:create', 'annotation:update', 'annotation:delete', 'image:upload'],
-        REVIEWER:  ['case:approve', 'case:reject', 'annotation:read', 'workflow:comment'],
-        RELEASER:  ['case:release', 'case:close', 'certificate:generate', 'workflow:comment']
+        INSPECTOR: ['case:create', 'case:submit', 'annotation:create', 'annotation:update', 'annotation:delete', 'image:upload', 'archive:view', 'archive:download'],
+        REVIEWER:  ['case:approve', 'case:reject', 'annotation:read', 'workflow:comment', 'archive:view', 'archive:download'],
+        RELEASER:  ['case:release', 'case:close', 'certificate:generate', 'workflow:comment', 'archive:create', 'archive:view', 'archive:retry', 'archive:download']
       };
       return matrix[role]?.includes(action) || false;
     }

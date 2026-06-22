@@ -34,6 +34,26 @@ export const imageApi = {
     `/api/cases/${caseId}/images/${imageId}/raw`
 };
 
+export const archiveApi = {
+  list: (caseId) =>
+    http.get(`/cases/${caseId}/archives`),
+
+  create: (caseId, data) =>
+    http.post(`/cases/${caseId}/archives`, data),
+
+  get: (caseId, archiveId) =>
+    http.get(`/cases/${caseId}/archives/${archiveId}`),
+
+  retry: (caseId, archiveId) =>
+    http.post(`/cases/${caseId}/archives/${archiveId}/retry`),
+
+  downloadUrl: (caseId, archiveId) =>
+    `${getBaseURL()}/cases/${caseId}/archives/${archiveId}/download`,
+
+  download: (caseId, archiveId) =>
+    http.download(`/cases/${caseId}/archives/${archiveId}/download`)
+};
+
 export const annotationApi = {
   create: (caseId, data) =>
     http.post(`/cases/${caseId}/annotations`, data),

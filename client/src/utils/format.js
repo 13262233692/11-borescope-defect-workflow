@@ -25,6 +25,8 @@ export const formatFileSize = (bytes) => {
   return `${size.toFixed(2)} ${units[i]}`;
 };
 
+export const formatBytes = formatFileSize;
+
 export const STATUS_LABELS = {
   PENDING: '待判读',
   REVIEWING: '待复核',

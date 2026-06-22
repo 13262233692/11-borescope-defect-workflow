@@ -335,6 +335,80 @@ CREATE TRIGGER annotation_version BEFORE UPDATE ON defect_annotation
     FOR EACH ROW EXECUTE FUNCTION increment_annotation_version();
 
 -- ============================================================
+-- 5.4 归档记录表 + 防越权修改触发器
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS archive_record (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    case_id UUID NOT NULL REFERENCES inspection_case(id) ON DELETE CASCADE,
+
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+        CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED')),
+
+    release_number VARCHAR(100),          -- 适航放行证书编号
+    release_note_text TEXT,               -- 放行结论文本
+    package_path VARCHAR(512),            -- 归档包文件路径（相对存储根）
+    package_name VARCHAR(255),            -- 归档包文件名
+    package_size BIGINT,                  -- 包大小（字节）
+    checksum_sha256 CHAR(64),             -- 归档包 SHA256
+
+    image_count INT DEFAULT 0,            -- 归档图像数
+    annotation_count INT DEFAULT 0,       -- 归档缺陷数
+    workflow_count INT DEFAULT 0,         -- 审批记录数
+
+    retry_count INT DEFAULT 0,            -- 已重试次数
+    max_retries INT DEFAULT 3,            -- 最大重试
+    last_error TEXT,                      -- 上次错误详情
+
+    started_at TIMESTAMP,                 -- 归档开始时间
+    completed_at TIMESTAMP,               -- 归档完成时间
+    created_by UUID NOT NULL REFERENCES app_user(id),
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_archive_case ON archive_record(case_id);
+CREATE INDEX IF NOT EXISTS idx_archive_status ON archive_record(status);
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_archive_case_completed
+    ON archive_record(case_id) WHERE status = 'COMPLETED';
+
+DROP TRIGGER IF EXISTS archive_timestamp ON archive_record;
+CREATE TRIGGER archive_timestamp BEFORE UPDATE ON archive_record
+    FOR EACH ROW EXECUTE FUNCTION update_timestamp();
+
+-- 5.5 已归档工单禁止修改标注/工作流
+CREATE OR REPLACE FUNCTION reject_if_archived()
+RETURNS TRIGGER AS $$
+DECLARE
+    _archived INT;
+BEGIN
+    EXECUTE format(
+        'SELECT COUNT(1) FROM archive_record WHERE case_id = $1 AND status = %L',
+        'COMPLETED'
+    ) INTO _archived USING (NEW.case_id);
+
+    IF _archived > 0 THEN
+        RAISE EXCEPTION '工单已完成适航归档，禁止修改';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS annotation_archived_guard ON defect_annotation;
+CREATE TRIGGER annotation_archived_guard BEFORE INSERT OR UPDATE OR DELETE ON defect_annotation
+    FOR EACH ROW EXECUTE FUNCTION reject_if_archived();
+
+DROP TRIGGER IF EXISTS workflow_archived_guard ON workflow_record;
+CREATE TRIGGER workflow_archived_guard BEFORE INSERT OR UPDATE ON workflow_record
+    FOR EACH ROW EXECUTE FUNCTION reject_if_archived();
+
+DROP TRIGGER IF EXISTS case_archived_guard ON inspection_case;
+CREATE TRIGGER case_archived_guard BEFORE UPDATE ON inspection_case
+    FOR EACH ROW WHEN (NEW.status IS DISTINCT FROM OLD.status)
+    EXECUTE FUNCTION reject_if_archived();
+
+-- ============================================================
 -- 6. 初始化测试数据
 -- ============================================================
 

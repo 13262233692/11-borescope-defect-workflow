@@ -35,6 +35,18 @@
     </div>
 
     <div class="detail-content">
+      <div v-if="isArchived" class="archived-banner">
+        <el-icon :size="18"><Lock /></el-icon>
+        <div>
+          <strong>本工单已完成适航归档</strong>
+          <span>证据包已固化，禁止修改标注、审批记录和工单状态</span>
+          <template v-if="completedArchive">
+            · {{ completedArchive.releaseNumber }} · {{ formatBytes(completedArchive.packageSize) }}
+          </template>
+        </div>
+        <el-icon class="banner-close" @click="dismissArchiveBanner" v-if="!_bannerDismissed"><Close /></el-icon>
+      </div>
+
       <div class="viewer-pane">
         <div class="viewer-toolbar">
           <div class="title">
@@ -121,8 +133,15 @@
         <WorkflowTimeline
           :case-id="caseId"
           :records="workflow"
-          :readonly="!caseDetail || caseDetail.status === 'CLOSED'"
+          :readonly="!caseDetail || caseDetail.status === 'CLOSED' || isArchived"
           @refresh="loadDetail"
+        />
+
+        <ArchivePanel
+          :case-id="caseId"
+          :case-detail="caseDetail"
+          :archives="archives"
+          @refresh="loadArchives"
         />
       </div>
     </div>
@@ -139,13 +158,13 @@ import { computed, inject, onBeforeUnmount, onMounted, reactive, ref, nextTick }
 import { useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import {
-  ArrowLeft, RefreshRight, Cpu, Aim, Calendar, PictureFilled, Loading
+  ArrowLeft, RefreshRight, Cpu, Aim, Calendar, PictureFilled, Loading, Lock, Close
 } from '@element-plus/icons-vue';
 
 import { caseApi } from '@/api/case';
-import { imageApi } from '@/api/image';
+import { imageApi, archiveApi } from '@/api/image';
 import { useUserStore } from '@/stores/user';
-import { STATUS_LABELS, STATUS_CLASS, formatDate } from '@/utils/format';
+import { STATUS_LABELS, STATUS_CLASS, formatDate, formatBytes } from '@/utils/format';
 import { CollabConnection } from '@/utils/collab';
 
 import TileImageViewer from '@/components/TileImageViewer.vue';
@@ -154,6 +173,7 @@ import AnnotationsPanel from '@/components/AnnotationsPanel.vue';
 import WorkflowPanel from '@/components/WorkflowPanel.vue';
 import WorkflowTimeline from '@/components/WorkflowTimeline.vue';
 import PeersIndicator from '@/components/PeersIndicator.vue';
+import ArchivePanel from '@/components/ArchivePanel.vue';
 
 const route = useRoute();
 const caseId = computed(() => route.params.caseId);
@@ -164,6 +184,16 @@ const caseDetail = ref(null);
 const images = ref([]);
 const annotations = ref([]);
 const workflow = ref([]);
+const archives = ref([]);
+const _bannerDismissed = ref(false);
+let _pollTimer = null;
+
+const isArchived = computed(() =>
+  archives.value.some(a => a.status === 'COMPLETED')
+);
+const completedArchive = computed(() =>
+  archives.value.find(a => a.status === 'COMPLETED') || null
+);
 
 const currentImageId = ref('');
 const currentImage = computed(() => images.value.find(i => i.id === currentImageId.value));
@@ -231,7 +261,8 @@ function handleCreateBox(box) {
 
 async function loadDetail() {
   try {
-    const detail = await caseApi.get(caseId.value);
+    const [detail, arch] = await Promise.all([
+      caseApi.get(caseId.value), loadArchives()]);
     caseDetail.value = detail;
     images.value = detail.images;
 
@@ -251,6 +282,31 @@ async function loadDetail() {
   } catch (e) {
     console.warn(e);
   }
+}
+
+async function loadArchives() {
+  try {
+    archives.value = await archiveApi.list(caseId.value) || [];
+    return archives.value;
+  } catch { archives.value = []; return []; }
+}
+
+function dismissArchiveBanner() {
+  _bannerDismissed.value = true;
+}
+
+let _pollRun = false;
+async function startArchivePolling() {
+  if (_pollTimer) clearInterval(_pollTimer);
+  _pollRun = true;
+  let idle = 0;
+  _pollTimer = setInterval(async () => {
+    if (!_pollRun) return;
+    const pending = archives.value.some(a => a.status === 'PENDING' || a.status === 'PROCESSING');
+    if (!pending) { idle++; if (idle > 20) { _pollRun = false; clearInterval(_pollTimer); return; } }
+    else idle = 0;
+    await loadArchives();
+  }, 3000);
 }
 
 function mergeServerAnnotations(serverList) {
@@ -445,12 +501,15 @@ defineExpose({
 onMounted(async () => {
   await loadDetail();
   if (userStore.token) setupCollab();
+  startArchivePolling();
 });
 
 onBeforeUnmount(() => {
   collab.value?.disconnect();
   collabState?.setConnected(false);
   collabState?.setPeerCount(0);
+  _pollRun = false;
+  if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
 });
 </script>
 
@@ -463,6 +522,31 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 16px;
   color: #64748b;
+}
+
+.archived-banner {
+  grid-column: 1 / -1;
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 18px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #fef9c3, #fef3c7);
+  border: 1px solid #fbbf24;
+  color: #78350f;
+  position: relative;
+
+  .banner-close {
+    margin-left: auto;
+    cursor: pointer;
+    color: #92400e;
+    opacity: 0.6;
+    &:hover { opacity: 1; }
+  }
+
+  > div {
+    display: flex; flex-direction: column; gap: 2px;
+    strong { font-size: 14px; }
+    span { font-size: 12px; opacity: 0.8; }
+  }
 }
 .loading-spin {
   animation: spin 1s linear infinite;

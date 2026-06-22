@@ -60,4 +60,48 @@ service.interceptors.response.use(
   }
 );
 
+service.download = function downloadFile(url, params = {}) {
+  const userStore = useUserStore();
+  const qs = Object.keys(params)
+    .filter(k => params[k] !== undefined && params[k] !== null)
+    .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`)
+    .join('&');
+  const full = (url.startsWith('/') ? '' : '/') + url + (qs ? `?${qs}` : '');
+  const base = service.defaults.baseURL || '';
+
+  const headers = { Authorization: `Bearer ${userStore.token}` };
+  return fetch(base + full, { headers })
+    .then(async (res) => {
+      if (!res.ok) {
+        const ct = res.headers.get('content-type');
+        if (ct?.includes('application/json')) {
+          const data = await res.json();
+          const msg = data?.error?.message || `下载失败 (${res.status})`;
+          ElMessage.error(msg);
+        } else {
+          ElMessage.error(`下载失败 (${res.status})`);
+        }
+        throw new Error(res.status);
+      }
+      const blob = await res.blob();
+      const disp = res.headers.get('content-disposition') || '';
+      let filename = '';
+      const utf8Match = disp.match(/filename\*=UTF-8''([^;]+)/);
+      const asciiMatch = disp.match(/filename="?([^";]+)"?/);
+      if (utf8Match) filename = decodeURIComponent(utf8Match[1]);
+      else if (asciiMatch) filename = asciiMatch[1];
+      else filename = `download-${Date.now()}.tar.gz`;
+
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+      return { ok: true, filename, size: blob.size };
+    });
+};
+
 export default service;

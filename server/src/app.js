@@ -18,6 +18,8 @@ const engineRoutes = require('./routes/engineRoutes');
 const caseRoutes = require('./routes/caseRoutes');
 const imageRoutes = require('./routes/imageRoutes');
 const annotationRoutes = require('./routes/annotationRoutes');
+const archiveRoutes = require('./routes/archiveRoutes');
+const archiveModel = require('./models/archiveModel');
 
 const app = express();
 const server = http.createServer(app);
@@ -71,6 +73,7 @@ app.use('/api/engines', engineRoutes);
 app.use('/api/cases', caseRoutes);
 app.use('/api/cases/:caseId/images', imageRoutes);
 app.use('/api/cases/:caseId/annotations', annotationRoutes);
+app.use('/api/cases/:caseId/archives', archiveRoutes);
 
 app.use('/uploads', express.static(config.storage.uploadDir, {
   maxAge: '1y',
@@ -82,6 +85,13 @@ app.use('/tiles', express.static(config.storage.tileDir, {
   maxAge: '1y',
   setHeaders: (res) => {
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  }
+}));
+app.use(archiveModel.ARCHIVE_STATIC_PREFIX, express.static(archiveModel.ARCHIVE_DIR, {
+  maxAge: '1y',
+  setHeaders: (res) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Content-Security-Policy', "default-src 'self'");
   }
 }));
 

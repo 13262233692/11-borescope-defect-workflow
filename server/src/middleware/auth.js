@@ -83,7 +83,12 @@ function requirePermission(resource, action) {
     'workflow:comment': ['INSPECTOR', 'REVIEWER', 'RELEASER', 'ADMIN'],
     'certificate:generate': ['RELEASER', 'ADMIN'],
     'user:manage': ['ADMIN'],
-    'system:config': ['ADMIN']
+    'system:config': ['ADMIN'],
+
+    'archive:create':   ['RELEASER', 'ADMIN'],
+    'archive:view':     ['INSPECTOR', 'REVIEWER', 'RELEASER', 'ADMIN'],
+    'archive:retry':    ['RELEASER', 'ADMIN'],
+    'archive:download': ['INSPECTOR', 'REVIEWER', 'RELEASER', 'ADMIN']
   };
 
   const key = `${resource}:${action}`;
