@@ -42,5 +42,8 @@ export const annotationApi = {
     http.put(`/cases/${caseId}/annotations/${annotationId}`, data),
 
   delete: (caseId, annotationId) =>
-    http.delete(`/cases/${caseId}/annotations/${annotationId}`)
+    http.delete(`/cases/${caseId}/annotations/${annotationId}`),
+
+  sync: (caseId, payload) =>
+    http.post(`/cases/${caseId}/annotations/sync`, payload)
 };

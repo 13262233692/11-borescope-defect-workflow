@@ -49,13 +49,16 @@
               :width="(ann.x2 - ann.x1) * (imageInfo?.width || 100)"
               :height="(ann.y2 - ann.y1) * (imageInfo?.height || 100)"
               :fill="`${severityColor(ann.severity)}22`"
-              :stroke="severityColor(ann.severity)"
-              :stroke-width="3 / (zoom > 1 ? zoom : 1)"
+              :stroke="conflictAnnotationIds?.includes(ann.id) ? '#ef4444' : severityColor(ann.severity)"
+              :stroke-width="conflictAnnotationIds?.includes(ann.id)
+                ? 6 / (zoom > 1 ? zoom : 1)
+                : 3 / (zoom > 1 ? zoom : 1)"
               filter="url(#glow)"
               class="annotation-box"
               :class="{
                 selected: selectedId === ann.id,
-                readonly: readonly
+                readonly: readonly,
+                conflict: conflictAnnotationIds?.includes(ann.id)
               }"
               @mousedown.stop="selectAnnotation(ann.id, $event)"
             />
@@ -181,6 +184,7 @@ const props = defineProps({
   selectedId: { type: String, default: '' },
   readonly: { type: Boolean, default: false },
   peerCursors: { type: Array, default: () => [] },
+  conflictAnnotationIds: { type: Array, default: () => [] },
   onCursorMove: { type: Function, default: null }
 });
 
@@ -511,10 +515,20 @@ defineExpose({ zoomIn, zoomOut, fitView, resetView });
   }
   &.readonly { cursor: default; }
   &:hover:not(.readonly) { filter: brightness(1.2); }
+  &.conflict {
+    stroke: #ef4444;
+    animation: conflictBlink 0.8s ease-in-out infinite alternate;
+    filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.9));
+  }
 }
 
 @keyframes dash {
   to { stroke-dashoffset: -24; }
+}
+
+@keyframes conflictBlink {
+  from { stroke-opacity: 1; stroke-width: 4px; }
+  to   { stroke-opacity: 0.35; stroke-width: 8px; }
 }
 
 .crosshair {

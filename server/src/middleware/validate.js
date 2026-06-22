@@ -54,8 +54,67 @@ const schemas = {
     polygon: Joi.array().items(Joi.object({ x: Joi.number(), y: Joi.number() })),
     measurement: Joi.number().positive().allow(null),
     measurementUnit: Joi.string().allow('').max(20),
-    conflictToken: Joi.string().uuid().required()
+    version: Joi.number().integer().positive(),
+    updatedAt: Joi.date().iso(),
+    conflictToken: Joi.string().uuid()
   }),
+
+  syncAnnotationCreate: Joi.object({
+    op: Joi.string().valid('create').required(),
+    tempId: Joi.string().max(100),
+    caseId: Joi.string().uuid().required(),
+    imageId: Joi.string().uuid().required(),
+    defectType: Joi.string().valid('CRACK', 'CORROSION', 'DEFORMATION', 'DEBRIS', 'BURN', 'WEAR', 'OTHER').required(),
+    severity: Joi.string().valid('MINOR', 'MODERATE', 'MAJOR', 'CRITICAL').required(),
+    description: Joi.string().allow(''),
+    x1: Joi.number().min(0).max(1).required(),
+    y1: Joi.number().min(0).max(1).required(),
+    x2: Joi.number().min(0).max(1).required(),
+    y2: Joi.number().min(0).max(1).required(),
+    polygon: Joi.array().items(Joi.object({ x: Joi.number(), y: Joi.number() })),
+    measurement: Joi.number().positive().allow(null),
+    measurementUnit: Joi.string().allow('').max(20),
+    clientUpdatedAt: Joi.date().iso()
+  }),
+
+  syncAnnotationUpdate: Joi.object({
+    op: Joi.string().valid('update').required(),
+    id: Joi.string().uuid().required(),
+    version: Joi.number().integer().positive().required(),
+    conflictToken: Joi.string().uuid().required(),
+    updatedAt: Joi.date().iso(),
+    defectType: Joi.string().valid('CRACK', 'CORROSION', 'DEFORMATION', 'DEBRIS', 'BURN', 'WEAR', 'OTHER'),
+    severity: Joi.string().valid('MINOR', 'MODERATE', 'MAJOR', 'CRITICAL'),
+    description: Joi.string().allow(''),
+    x1: Joi.number().min(0).max(1),
+    y1: Joi.number().min(0).max(1),
+    x2: Joi.number().min(0).max(1),
+    y2: Joi.number().min(0).max(1),
+    polygon: Joi.array().items(Joi.object({ x: Joi.number(), y: Joi.number() })),
+    measurement: Joi.number().positive().allow(null),
+    measurementUnit: Joi.string().allow('').max(20),
+    clientUpdatedAt: Joi.date().iso()
+  }),
+
+  syncAnnotationDelete: Joi.object({
+    op: Joi.string().valid('delete').required(),
+    id: Joi.string().uuid().required(),
+    version: Joi.number().integer().positive(),
+    conflictToken: Joi.string().uuid(),
+    updatedAt: Joi.date().iso(),
+    clientUpdatedAt: Joi.date().iso()
+  }),
+
+  syncAnnotations: Joi.object({
+    operations: Joi.array()
+      .items(Joi.object({}).unknown(true))
+      .min(1)
+      .max(200)
+      .required(),
+    imageId: Joi.string().uuid(),
+    caseSyncVersion: Joi.number().integer().positive(),
+    autoMerge: Joi.boolean().default(true)
+  })
 
   workflowAction: Joi.object({
     action: Joi.string().valid(

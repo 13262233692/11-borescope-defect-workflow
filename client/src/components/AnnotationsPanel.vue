@@ -42,7 +42,8 @@
         class="annotation-item"
         :class="{
           selected: selectedId === ann.id,
-          readonly: !canEdit(ann)
+          readonly: !canEdit(ann),
+          conflict: conflictIds.includes(ann.id)
         }"
         @click="$emit('select', ann.id, ann.imageId)"
       >
@@ -51,6 +52,9 @@
             {{ severityLabels[ann.severity] }}
           </span>
           <span class="defect-type">{{ defectLabels[ann.defectType] }}</span>
+          <span v-if="conflictIds.includes(ann.id)" class="conflict-tag" title="存在编辑冲突">
+            ⚠ 冲突
+          </span>
           <span v-if="ann.measurement" class="measure">
             {{ ann.measurement }}{{ ann.measurementUnit || 'mm' }}
           </span>
@@ -66,6 +70,11 @@
         </div>
         <p class="desc" v-if="ann.description">{{ ann.description }}</p>
         <p class="desc empty" v-else>暂无描述</p>
+        <div class="conflict-banner" v-if="conflictInfo(ann.id)">
+          <strong>⚠ 冲突：</strong>
+          由 <em>{{ conflictInfo(ann.id).updatedByName || '协作者' }}</em> 更新
+          （v{{ conflictInfo(ann.id).currentVersion }}）
+        </div>
         <div class="item-footer">
           <el-avatar :size="18" style="background:#64748b;font-size:10px">
             {{ ann.creatorName?.[0] }}
@@ -133,10 +142,16 @@ const props = defineProps({
   annotations: Array,
   images: Array,
   selectedId: String,
-  readonly: Boolean
+  readonly: Boolean,
+  conflicts: { type: Object, default: () => ({}) }
 });
 
-const emit = defineEmits(['select', 'changed']);
+const emit = defineEmits(['select', 'changed', 'resolve-conflict']);
+
+const conflictIds = computed(() => Object.keys(props.conflicts || {}));
+function conflictInfo(id) {
+  return props.conflicts?.[id] || null;
+}
 
 const userStore = useUserStore();
 const severityLabels = SEVERITY_LABELS;
@@ -252,6 +267,32 @@ async function saveEdit() {
       box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
     }
     &.readonly { opacity: 0.7; }
+    &.conflict {
+      border-color: #ef4444;
+      background: #fef2f2;
+      animation: conflictBg 1.2s ease-in-out infinite alternate;
+    }
+
+    .conflict-tag {
+      font-size: 10px;
+      color: #dc2626;
+      font-weight: 700;
+      background: #fee2e2;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    .conflict-banner {
+      margin: 6px 0 8px;
+      padding: 6px 8px;
+      background: #fef2f2;
+      border-left: 3px solid #ef4444;
+      font-size: 11px;
+      color: #7f1d1d;
+      border-radius: 4px;
+
+      em { color: #dc2626; font-style: normal; font-weight: 600; }
+    }
 
     .item-header {
       display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
@@ -317,5 +358,10 @@ async function saveEdit() {
 
   p { margin: 6px 0 0; font-size: 13px; }
   .tip { font-size: 11px; color: #cbd5e1; }
+}
+
+@keyframes conflictBg {
+  from { box-shadow: 0 0 0 0 rgba(239,68,68,0); border-color: #ef4444; }
+  to   { box-shadow: 0 0 0 4px rgba(239,68,68,0.2); border-color: #dc2626; }
 }
 </style>

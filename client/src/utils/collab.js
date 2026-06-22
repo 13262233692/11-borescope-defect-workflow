@@ -112,6 +112,10 @@ export class CollabConnection {
         this.handlers.onNewComment?.(payload);
         break;
 
+      case 'ANNOTATION_SYNC_COMPLETE':
+        this.handlers.onAnnotationSyncComplete?.(payload);
+        break;
+
       case 'ERROR':
         console.error('[Collab] Server error:', msg.error);
         this.handlers.onError?.(msg.error);

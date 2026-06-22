@@ -61,6 +61,7 @@
             :selected-id="selectedAnnotationId"
             :readonly="!canAnnotate"
             :peer-cursors="peerCursors"
+            :conflict-annotation-ids="Array.from(conflictAnnotations.keys())"
             @select-annotation="selectAnnotation"
             @create-annotation="handleCreateBox"
             @cursor-move="sendCursor"
@@ -112,6 +113,7 @@
           :images="images"
           :selected-id="selectedAnnotationId"
           :readonly="!canAnnotate"
+          :conflicts="Object.fromEntries(conflictAnnotations)"
           @select="onAnnotationSelect"
           @changed="loadDetail"
         />
@@ -173,6 +175,13 @@ const currentAnnotations = computed(() =>
 const selectedAnnotationId = ref('');
 const pendingBox = ref(null);
 
+const conflictAnnotations = reactive(new Map());
+const syncState = reactive({
+  isSyncing: false,
+  lastSyncAt: null,
+  pendingCount: 0
+});
+
 const peers = ref([]);
 const peerCursors = computed(() => _peerCursors.filter(c => c.imageId === currentImageId.value));
 const _peerCursors = reactive([]);
@@ -225,7 +234,12 @@ async function loadDetail() {
     const detail = await caseApi.get(caseId.value);
     caseDetail.value = detail;
     images.value = detail.images;
-    annotations.value = detail.annotations;
+
+    if (annotations.value.length === 0) {
+      annotations.value = detail.annotations;
+    } else {
+      mergeServerAnnotations(detail.annotations);
+    }
     workflow.value = detail.workflow;
 
     if (!currentImageId.value && images.value.length > 0) {
@@ -236,6 +250,39 @@ async function loadDetail() {
     }
   } catch (e) {
     console.warn(e);
+  }
+}
+
+function mergeServerAnnotations(serverList) {
+  const serverMap = new Map(serverList.map(a => [a.id, a]));
+  const localIds = new Set(annotations.value.map(a => a.id));
+
+  const addOrUpdate = [];
+  for (const s of serverList) {
+    const local = annotations.value.find(a => a.id === s.id);
+    if (!local) {
+      addOrUpdate.push(s);
+    } else if (s.version >= local.version) {
+      addOrUpdate.push(s);
+      if (conflictAnnotations.has(s.id)) {
+        const conf = conflictAnnotations.get(s.id);
+        if (s.version > conf.expectedVersion + 1) {
+          ElMessage.warning(`标注已被协作者更新，已自动同步最新版本`);
+          conflictAnnotations.delete(s.id);
+        }
+      }
+    }
+  }
+
+  annotations.value = annotations.value
+    .filter(a => serverMap.has(a.id))
+    .concat(addOrUpdate.filter(a => !localIds.has(a.id)));
+
+  for (const s of addOrUpdate) {
+    const idx = annotations.value.findIndex(a => a.id === s.id);
+    if (idx >= 0 && serverMap.has(s.id)) {
+      annotations.value.splice(idx, 1, s);
+    }
   }
 }
 
@@ -252,6 +299,56 @@ function sendCursor(x, y, zoom) {
   const data = { id: 'self', imageId: currentImageId.value, x, y };
   if (idx >= 0) _peerCursors.splice(idx, 1, data);
   else _peerCursors.push(data);
+}
+
+async function executeSync(operations) {
+  if (!operations.length) return { results: [], serverAnnotations: [] };
+  syncState.isSyncing = true;
+  syncState.pendingCount = operations.length;
+  try {
+    const result = await annotationApi.sync(caseId.value, {
+      operations,
+      autoMerge: true
+    });
+    applySyncResult(result);
+    return result;
+  } finally {
+    syncState.isSyncing = false;
+    syncState.lastSyncAt = new Date();
+    syncState.pendingCount = 0;
+  }
+}
+
+function applySyncResult(result) {
+  const { results = [], serverAnnotations = [] } = result;
+
+  for (const r of results) {
+    if (r.status === 'conflict') {
+      conflictAnnotations.set(r.id, {
+        status: 'conflict',
+        message: r.error,
+        expectedVersion: r.details?.expectedVersion,
+        currentVersion: r.details?.currentVersion,
+        updatedByName: r.details?.updatedByName,
+        theirs: r.details?.theirs,
+        ours: r.details?.ours,
+        at: new Date()
+      });
+      ElMessage.warning({
+        message: r.error || `标注 ${r.id.slice(0, 8)} 存在冲突`,
+        duration: 5000,
+        showClose: true
+      });
+    } else if (r.status === 'error') {
+      ElMessage.error(r.error || `操作失败`);
+    } else if (r.status === 'merged' && r.data) {
+      ElMessage.info(`已自动合并非冲突字段: ${r.mergedFields?.join(', ')}`);
+    }
+  }
+
+  if (serverAnnotations?.length) {
+    mergeServerAnnotations(serverAnnotations);
+  }
 }
 
 function setupCollab() {
@@ -276,6 +373,7 @@ function setupCollab() {
       collabState?.setConnected(false);
     },
     onAnnotationCreated: ({ annotation, by }) => {
+      if (!annotation?.id) return;
       if (by?.id === userStore.currentUser?.id) return;
       if (!annotations.value.find(a => a.id === annotation.id)) {
         annotations.value.push(annotation);
@@ -283,15 +381,26 @@ function setupCollab() {
       }
     },
     onAnnotationUpdated: ({ annotation, by }) => {
+      if (!annotation?.id) return;
       if (by?.id === userStore.currentUser?.id) return;
       const idx = annotations.value.findIndex(a => a.id === annotation.id);
       if (idx >= 0) {
         annotations.value.splice(idx, 1, annotation);
+      } else {
+        annotations.value.push(annotation);
       }
     },
     onAnnotationDeleted: ({ annotationId, by }) => {
+      if (!annotationId) return;
       if (by?.id === userStore.currentUser?.id) return;
       annotations.value = annotations.value.filter(a => a.id !== annotationId);
+      conflictAnnotations.delete(annotationId);
+    },
+    onAnnotationSyncComplete: (payload) => {
+      if (payload?.by?.id === userStore.currentUser?.id) return;
+      if (payload?.serverAnnotations?.length) {
+        mergeServerAnnotations(payload.serverAnnotations);
+      }
     },
     onCursorUpdate: (payload) => {
       if (!payload || payload.peerId === collab.value?.wsId) return;
@@ -308,14 +417,30 @@ function setupCollab() {
       else _peerCursors.push(data);
     },
     onCaseStatusChanged: () => {
-      loadDetail();
+      caseApi.get(caseId.value).then(detail => {
+        caseDetail.value = detail;
+        workflow.value = detail.workflow;
+      });
     },
     onNewComment: () => {
-      loadDetail();
+      caseApi.get(caseId.value).then(detail => {
+        workflow.value = detail.workflow;
+      });
     }
   });
   collab.value.connect();
 }
+
+function getConflictState(id) {
+  return conflictAnnotations.get(id) || null;
+}
+
+defineExpose({
+  executeSync,
+  conflictAnnotations,
+  syncState,
+  getConflictState
+});
 
 onMounted(async () => {
   await loadDetail();

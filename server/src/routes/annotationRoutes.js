@@ -71,4 +71,59 @@ router.delete('/:annotationId', requirePermission('annotation', 'delete'),
   }
 });
 
+router.post('/sync', requirePermission('annotation', 'create'),
+  canAccessCase, async (req, res, next) => {
+  try {
+    const result = await annotationModel.syncAnnotations(
+      req.params.caseId, req.user, req.body
+    );
+
+    const changed = { created: [], updated: [], merged: [], deleted: [] };
+    for (const r of result.results) {
+      if (r.status === 'created' && r.data) changed.created.push(r.data);
+      else if (r.status === 'updated' && r.data) changed.updated.push(r.data);
+      else if (r.status === 'merged' && r.data) changed.merged.push(r.data);
+      else if (r.status === 'deleted') changed.deleted.push(r.id);
+    }
+
+    const summary = {
+      caseId: req.params.caseId,
+      by: req.user,
+      serverTimestamp: Date.now(),
+      batchId: require('uuid').v4(),
+      operations: req.body?.operations?.length || 0,
+      results: result.results,
+      serverAnnotations: result.serverAnnotations
+    };
+
+    for (const ann of changed.created) {
+      collabWs.broadcastToRoom(req.params.caseId, {
+        type: 'ANNOTATION_CREATED',
+        payload: { annotation: ann, by: req.user, serverTimestamp: Date.now(), batchSync: true }
+      });
+    }
+    for (const ann of [...changed.updated, ...changed.merged]) {
+      collabWs.broadcastToRoom(req.params.caseId, {
+        type: 'ANNOTATION_UPDATED',
+        payload: { annotation: ann, by: req.user, serverTimestamp: Date.now(), batchSync: true }
+      });
+    }
+    for (const annId of changed.deleted) {
+      collabWs.broadcastToRoom(req.params.caseId, {
+        type: 'ANNOTATION_DELETED',
+        payload: { annotationId: annId, by: req.user, serverTimestamp: Date.now(), batchSync: true }
+      });
+    }
+
+    collabWs.broadcastToRoom(req.params.caseId, {
+      type: 'ANNOTATION_SYNC_COMPLETE',
+      payload: summary
+    });
+
+    res.json({ success: true, data: summary });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
