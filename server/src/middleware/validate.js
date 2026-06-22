@@ -114,7 +114,7 @@ const schemas = {
     imageId: Joi.string().uuid(),
     caseSyncVersion: Joi.number().integer().positive(),
     autoMerge: Joi.boolean().default(true)
-  })
+  }),
 
   workflowAction: Joi.object({
     action: Joi.string().valid(
